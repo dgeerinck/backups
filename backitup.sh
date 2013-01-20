@@ -28,11 +28,16 @@
 # Website:  https://github.com/pigmonkey/backups
 #
 ###############################################################################
-
+verbosity=0
+v=1; vv=2; vvv=3;
 doLog(){
-	msg=$1
-	if [ ! -z $debugMode ]; then echo "debug : "$msg; fi
+	[ -z "$1" ] && { echo "$0 doLog(msg, level): message not specified"; return;}
+	msgStr=$1; 		#1str param is message
+	msgLevel=${2:-$v}; 	#2nd  param is message level
+	#echo "(level:$msgLevel, \"$msgStr\")";
+	if [ $msgLevel -le $verbosity ]; then echo "BackItUp_Msg($msgLevel): $msgStr"; fi
 }
+
 
 # Define the backup command.
 BACKUP="echo Error : No backup command provided!"
@@ -67,7 +72,7 @@ usage() {
 Note that any command line arguments overwrite variables defined in the source.
 
 Options:
-    -v 	    verbose (debug info) !!!!MUST BE FIRST ARG!!!! (see getopts)
+    -vvv    verbosity
     -p      the period for which backups should attempt to be executed
             (integer seconds or 'DAILY', 'WEEKLY' or 'MONTHLY')
     -b      the backup command to execute; note that this should be quoted if it contains a space
@@ -78,32 +83,32 @@ Options:
 
 backup() {
     # Execute the backup.
-    doLog '[+]Executing backup()...'
-    $BACKUP
+    doLog '[+]Executing backup()...' $vvv
+    $BACKUP | while read -r line; do doLog "Bkup : $line" $v; done  
     # If the backup was succesful, store the current time.
     if [ $? -eq 0 ]; then
-        doLog 'Backup completed.'
+        doLog 'Backup completed.' $vv
         date $timeformat > "$LASTRUN"
-        doLog "Write "date $timeformat " LastRun file $LASTRUN"
+        doLog "Write `date $timeformat` in LastRun file $LASTRUN" $vv
     else
-        doLog 'Backup failed.'
-        echo  "Error : Backup script '$BACKUP' FAILED";
+        doLog "Error : Backup script '$BACKUP' FAILED" $vv
     fi
     exit
 }
 
 # Get any arguments.
-doLog '[+]Get any arguments';
+doLog '[+]Get any arguments' $vvv
 while getopts "v :p:b:l:n:h" opt; do
     case $opt in
     	v)
-    	    debugMode=1;
-    	    doLog "   debug activated"
+	    verbosity=$(($verbosity+1))
     	    ;;
         p)
+            [ -z "$OPTARG" ] && { doLog 'Error: Invalid Period!' 0; usage; exit; } 
             PERIOD=$OPTARG
             ;;
         b)
+            [ -z "$OPTARG" ] && { doLog 'Error: Backup command!' 0; usage; exit; } 
             BACKUP=$OPTARG
             ;;
         l)
@@ -125,28 +130,28 @@ while getopts "v :p:b:l:n:h" opt; do
     esac
 done
 
-
 # Set the format of the time string to store.
-if [ "$PERIOD" = "DAILY" ]; then
+if [ "$PERIOD" = 'DAILY' ]; then
     timeformat='+%Y%m%d'
-elif [ "$PERIOD" = "WEEKLY" ]; then
+elif [ "$PERIOD" = 'WEEKLY' ]; then
     timeformat='+%G-W%W'
-elif [ "$PERIOD" = "MONTHLY" ]; then
+elif [ "$PERIOD" = 'MONTHLY' ]; then
     timeformat='+%Y%m'
 else
     timeformat='+%s'
 fi
-doLog "[+] Params :  "
-doLog "  PERIOD=$PERIOD (timeformat = $timeformat)"
-doLog "  BACKUP=$BACKUP"
-doLog "  LASTRUN=$LASTRUN"
-doLog "  NOFILE=$NOFILE"
+
+doLog "[+] Params :  " $vvv
+doLog "  PERIOD=$PERIOD (timeformat = $timeformat)" $vvv
+doLog "  BACKUP=$BACKUP" $vvv
+doLog "  LASTRUN=$LASTRUN" $vvv
+doLog "  NOFILE=$NOFILE" $vvv
 
 
 
 # If the file does not exist, perform the user requested action. If no action
 # was specified, exit.
-doLog "[+]Check if $LASTRUN file exists and not empty..."
+doLog "[+]Check if $LASTRUN file exists and not empty..." $vv
 if [ ! -e "$LASTRUN" ]; then
     if [ -n "$NOFILE" ]; then
 	NOFILE="touch $LASTRUN"
@@ -155,20 +160,23 @@ if [ ! -e "$LASTRUN" ]; then
         exit
     fi
 else 
-    doLog '  LastRun file found and not empty'
+    doLog '  LastRun file found and not empty' $vv
 fi
 
 # If the file exists and is not empty, get the timestamp contained within it.
 if [ -s "$LASTRUN" ]; then
-    timestamp=$(eval cat \$LASTRUN)
+    timestampBkup=$(eval cat \$LASTRUN); 
+    timestampNow=`date $timeformat`;	 
 
     # If the backup period is daily, weekly or monthly, perform the backup if
     # the stored timestamp is not equal to the current date in the same format.
     if [ "$PERIOD" = 'DAILY' -o "$PERIOD" = 'WEEKLY' -o "$PERIOD" = 'MONTHLY' ]; then
-        if [ $timestamp != `date $timeformat` ]; then
+	doLog "$timestampBkup = Period Last Bkup" $vvv; 
+	doLog "$timestampNow = Period Now" $vvv
+        if [ $timestampBkup != $timestampNow ]; then
             backup
         else
-            echo "Right now (@`date $timeformat`), last $PERIOD backup (@$timestamp) is OK. Exiting."
+            doLog "Right now (@$timestampNow), last $PERIOD backup (@$timestampBkup) is OK. Exiting." $vv
             exit
         fi
 
@@ -176,11 +184,13 @@ if [ -s "$LASTRUN" ]; then
     # between the stored timestamp and the current time is greater than the
     # defined period.
     else
-        diff=$(( `date $timeformat` - $timestamp))
+        doLog "$timestampBkup = timestamp Last Bkup" $vvv; 
+	doLog "$timestampNow = timestamp Now" $vvv
+        diff=$(( $timestampNow - $timestampBkup))
         if [ "$diff" -gt "$PERIOD" ]; then
             backup
         else
-            echo "Last backup (timestamp=$timestamp) less than $PERIOD seconds ago. Exiting."
+            doLog "Last backup (timestamp=$timestampBkup) less than $PERIOD seconds ago. Exiting." $vv
             exit
         fi
     fi
