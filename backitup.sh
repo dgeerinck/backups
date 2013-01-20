@@ -29,12 +29,17 @@
 #
 ###############################################################################
 
-# Define the file that will hold the timestamp of the last successful backup.
-# It is recommended that this file be *inside* the directory to be backed up.
-LASTRUN="$HOME/documents/.lastrun"
+doLog(){
+	msg=$1
+	if [ ! -z $debugMode ]; then echo "debug : "$msg; fi
+}
 
 # Define the backup command.
-BACKUP="$HOME/bin/tarsnapper.py"
+BACKUP="echo Error : No backup command provided!"
+
+# Define the file that will hold the timestamp of the last successful backup.
+# It is recommended that this file be *inside* the directory to be backed up.
+LASTRUN="./lastrun"
 
 # Define the command to be executed if the file which holds the time of the
 # previous backup does not exist. The default behaviour here is to simply
@@ -62,6 +67,7 @@ usage() {
 Note that any command line arguments overwrite variables defined in the source.
 
 Options:
+    -v 	    verbose (debug info) !!!!MUST BE FIRST ARG!!!! (see getopts)
     -p      the period for which backups should attempt to be executed
             (integer seconds or 'DAILY', 'WEEKLY' or 'MONTHLY')
     -b      the backup command to execute; note that this should be quoted if it contains a space
@@ -69,23 +75,31 @@ Options:
     -n      the command to be executed if the above file does not exist"
 }
 
+
 backup() {
     # Execute the backup.
-    echo 'Executing backup...'
+    doLog '[+]Executing backup()...'
     $BACKUP
     # If the backup was succesful, store the current time.
     if [ $? -eq 0 ]; then
-        echo 'Backup completed.'
+        doLog 'Backup completed.'
         date $timeformat > "$LASTRUN"
+        doLog "Write "date $timeformat " LastRun file $LASTRUN"
     else
-        echo 'Backup failed.'
+        doLog 'Backup failed.'
+        echo  "Error : Backup script '$BACKUP' FAILED";
     fi
     exit
 }
 
 # Get any arguments.
-while getopts ":p:b:l:n:h" opt; do
+doLog '[+]Get any arguments';
+while getopts "v :p:b:l:n:h" opt; do
     case $opt in
+    	v)
+    	    debugMode=1;
+    	    doLog "   debug activated"
+    	    ;;
         p)
             PERIOD=$OPTARG
             ;;
@@ -111,25 +125,37 @@ while getopts ":p:b:l:n:h" opt; do
     esac
 done
 
+
 # Set the format of the time string to store.
-if [ $PERIOD == 'DAILY' ]; then
+if [ "$PERIOD" = "DAILY" ]; then
     timeformat='+%Y%m%d'
-elif [ $PERIOD == 'WEEKLY' ]; then
+elif [ "$PERIOD" = "WEEKLY" ]; then
     timeformat='+%G-W%W'
-elif [ $PERIOD == 'MONTHLY' ]; then
+elif [ "$PERIOD" = "MONTHLY" ]; then
     timeformat='+%Y%m'
 else
     timeformat='+%s'
 fi
+doLog "[+] Params :  "
+doLog "  PERIOD=$PERIOD (timeformat = $timeformat)"
+doLog "  BACKUP=$BACKUP"
+doLog "  LASTRUN=$LASTRUN"
+doLog "  NOFILE=$NOFILE"
+
+
 
 # If the file does not exist, perform the user requested action. If no action
 # was specified, exit.
+doLog "[+]Check if $LASTRUN file exists and not empty..."
 if [ ! -e "$LASTRUN" ]; then
     if [ -n "$NOFILE" ]; then
+	NOFILE="touch $LASTRUN"
         $NOFILE
     else
         exit
     fi
+else 
+    doLog '  LastRun file found and not empty'
 fi
 
 # If the file exists and is not empty, get the timestamp contained within it.
@@ -138,11 +164,11 @@ if [ -s "$LASTRUN" ]; then
 
     # If the backup period is daily, weekly or monthly, perform the backup if
     # the stored timestamp is not equal to the current date in the same format.
-    if [ $PERIOD == 'DAILY' -o $PERIOD == 'WEEKLY' -o $PERIOD == 'MONTHLY' ]; then
+    if [ "$PERIOD" = 'DAILY' -o "$PERIOD" = 'WEEKLY' -o "$PERIOD" = 'MONTHLY' ]; then
         if [ $timestamp != `date $timeformat` ]; then
             backup
         else
-            echo "Already backed up once for period $PERIOD. Exiting."
+            echo "Right now (@`date $timeformat`), last $PERIOD backup (@$timestamp) is OK. Exiting."
             exit
         fi
 
@@ -154,7 +180,7 @@ if [ -s "$LASTRUN" ]; then
         if [ "$diff" -gt "$PERIOD" ]; then
             backup
         else
-            echo "Backed up less than $PERIOD seconds ago. Exiting."
+            echo "Last backup (timestamp=$timestamp) less than $PERIOD seconds ago. Exiting."
             exit
         fi
     fi
@@ -165,3 +191,4 @@ fi
 if [ -e "$LASTRUN" ]; then
     backup
 fi
+
